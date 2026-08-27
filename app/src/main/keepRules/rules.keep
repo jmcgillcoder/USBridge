@@ -1,0 +1,26 @@
+# Add project specific R8 rules here.
+# AGP will combine all keep rule files in src/main/keepRules to pass to R8
+#
+# For more details, see
+#   https://d.android.com/r/tools/r8/keep-rules
+
+# AIDL interface and stub used across the app <-> root process boundary.
+-keep class com.usbridge.core.root.IRootControlService { *; }
+-keep class com.usbridge.core.root.IRootControlService$* { *; }
+
+# Instantiated by class name inside the libsu root process.
+-keep class com.usbridge.core.root.RootControlService { *; }
+
+# libsu spawns and talks to the root process reflectively.
+-keep class com.topjohnwu.superuser.** { *; }
+-dontwarn com.topjohnwu.superuser.**
+
+# Strip android.util.Log calls from release builds.
+-assumenosideeffects class android.util.Log {
+    public static boolean isLoggable(java.lang.String, int);
+    public static int v(...);
+    public static int d(...);
+    public static int i(...);
+    public static int w(...);
+    public static int e(...);
+}

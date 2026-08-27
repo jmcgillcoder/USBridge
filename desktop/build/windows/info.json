@@ -1,0 +1,19 @@
+{
+	"fixed": {
+		"file_version": "{{.Info.ProductVersion}}",
+		"product_version": "{{.Info.ProductVersion}}"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "{{.Info.ProductVersion}}",
+			"FileVersion": "{{.Info.ProductVersion}}",
+			"CompanyName": "{{.Info.CompanyName}}",
+			"FileDescription": "USBridge USB tethering proxy",
+			"InternalName": "USBridge",
+			"LegalCopyright": "{{.Info.Copyright}}",
+			"OriginalFilename": "USBridge.exe",
+			"ProductName": "{{.Info.ProductName}}",
+			"Comments": "{{.Info.Comments}}"
+		}
+	}
+}

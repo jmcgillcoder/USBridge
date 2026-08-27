@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+   USBridge intentionally backs up nothing. These explicit exclusions keep root
+   automation state and traffic history on the device even if allowBackup is
+   ever re-enabled.
+-->
+<full-backup-content>
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>
