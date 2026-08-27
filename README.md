@@ -1,8 +1,20 @@
 # USBridge
 
+**简体中文** | [English](README_EN.md)
+
 让 Windows 通过 Android 手机的 USB 共享网络上网，并把这条网络作为 HTTP / SOCKS5 代理提供给本机软件。
 
 手机端和电脑端配套使用。目前支持 **Android 11+（需要 Root）** 和 **Windows x64**，没有账号、云端服务或远程控制。
+
+## 界面
+
+### Windows
+
+![USBridge Windows 连接页面](docs/images/desktop-connection.png)
+
+### Android
+
+<img src="docs/images/android-automation.png" alt="USBridge Android 自动共享页面" width="360">
 
 ## 下载
 
