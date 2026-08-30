@@ -9,7 +9,7 @@ type wfpPolicy struct {
 }
 
 func installWFPPolicy(int, string) (*wfpPolicy, error) {
-	return nil, errors.New("当前 Windows 架构不支持独占模式")
+	return nil, errors.New("当前 Windows 架构不支持严格代理模式")
 }
 
 func (*wfpPolicy) Close() {}

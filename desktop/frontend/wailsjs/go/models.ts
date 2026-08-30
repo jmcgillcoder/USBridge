@@ -112,6 +112,8 @@ export namespace main {
 	    exclusiveModeActive: boolean;
 	    exclusiveModeInterface?: string;
 	    exclusiveModeError?: string;
+	    systemProxyActive: boolean;
+	    systemProxyError?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new DesktopSnapshot(source);
@@ -143,6 +145,8 @@ export namespace main {
 	        this.exclusiveModeActive = source["exclusiveModeActive"];
 	        this.exclusiveModeInterface = source["exclusiveModeInterface"];
 	        this.exclusiveModeError = source["exclusiveModeError"];
+	        this.systemProxyActive = source["systemProxyActive"];
+	        this.systemProxyError = source["systemProxyError"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -166,3 +170,31 @@ export namespace main {
 
 }
 
+export namespace updater {
+
+	export class Info {
+	    currentVersion: string;
+	    latestVersion: string;
+	    available: boolean;
+	    name?: string;
+	    notes?: string;
+	    releaseUrl?: string;
+	    publishedAt?: string;
+
+	    static createFrom(source: any = {}) {
+	        return new Info(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.currentVersion = source["currentVersion"];
+	        this.latestVersion = source["latestVersion"];
+	        this.available = source["available"];
+	        this.name = source["name"];
+	        this.notes = source["notes"];
+	        this.releaseUrl = source["releaseUrl"];
+	        this.publishedAt = source["publishedAt"];
+	    }
+	}
+
+}

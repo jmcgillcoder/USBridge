@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/usbridge/usbridge/desktop/internal/exclusivenet"
+	"github.com/usbridge/usbridge/desktop/internal/updater"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -15,6 +16,9 @@ import (
 var assets embed.FS
 
 func main() {
+	if handled, exitCode := updater.RunApplyIfRequested(os.Args[1:]); handled {
+		os.Exit(exitCode)
+	}
 	if handled, exitCode := exclusivenet.RunHelperIfRequested(os.Args[1:]); handled {
 		os.Exit(exitCode)
 	}

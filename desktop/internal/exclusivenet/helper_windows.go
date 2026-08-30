@@ -152,11 +152,11 @@ func runElevatedHelper(controlAddress, token string) error {
 			return nil
 
 		default:
-			response.Error = "不支持的独占模式操作"
+			response.Error = "不支持的严格代理模式操作"
 		}
 
 		if response.Error == "" && !response.OK {
-			response.Error = "独占模式操作未完成"
+			response.Error = "严格代理模式操作未完成"
 		}
 		response.Error = strings.TrimSpace(response.Error)
 		if err := encoder.Encode(response); err != nil {

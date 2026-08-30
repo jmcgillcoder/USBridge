@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -21,7 +22,11 @@ import (
 	"github.com/usbridge/usbridge/desktop/internal/proxy/multiplex"
 	"github.com/usbridge/usbridge/desktop/internal/routing"
 	"github.com/usbridge/usbridge/desktop/internal/service"
+	"github.com/usbridge/usbridge/desktop/internal/systemproxy"
 	"github.com/usbridge/usbridge/desktop/internal/traffic"
+	"github.com/usbridge/usbridge/desktop/internal/updater"
+	"github.com/usbridge/usbridge/desktop/internal/version"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 const (
@@ -41,15 +46,19 @@ type App struct {
 	mu                   sync.RWMutex
 	phoneOperationMu     sync.Mutex
 	exclusiveOperationMu sync.Mutex
+	updateOperationMu    sync.Mutex
 
-	ctx        context.Context
-	cancel     context.CancelFunc
-	registry   *adapter.Registry
-	policy     *routing.Policy
-	controller *service.Controller
-	meter      *traffic.Meter
-	logger     *slog.Logger
-	exclusive  exclusivenet.Controller
+	ctx          context.Context
+	cancel       context.CancelFunc
+	registry     *adapter.Registry
+	policy       *routing.Policy
+	controller   *service.Controller
+	meter        *traffic.Meter
+	logger       *slog.Logger
+	exclusive    exclusivenet.Controller
+	systemProxy  systemproxy.Controller
+	updateClient *updater.Client
+	latestUpdate *updater.Info
 
 	proxyListener   net.Listener
 	proxyServer     *multiplex.Server
@@ -85,6 +94,8 @@ type DesktopSnapshot struct {
 	ExclusiveModeActive       bool   `json:"exclusiveModeActive"`
 	ExclusiveModeInterface    string `json:"exclusiveModeInterface,omitempty"`
 	ExclusiveModeError        string `json:"exclusiveModeError,omitempty"`
+	SystemProxyActive         bool   `json:"systemProxyActive"`
+	SystemProxyError          string `json:"systemProxyError,omitempty"`
 }
 
 type AuthenticatedProxyAccess struct {
@@ -106,7 +117,12 @@ func (a *App) startup(wailsContext context.Context) {
 	a.policy = routing.NewPolicy(routing.IPModeAuto)
 	a.meter = traffic.NewMeter()
 	a.exclusive = exclusivenet.New(a.logger)
+	a.systemProxy = systemproxy.New()
+	a.updateClient = updater.NewClient()
 	a.mu.Unlock()
+	if err := a.systemProxy.Restore(); err != nil {
+		a.logger.Warn("failed to recover Windows system proxy", "error", err)
+	}
 
 	refreshContext, cancel := context.WithTimeout(a.ctx, 12*time.Second)
 	_, err := a.registry.Refresh(refreshContext)
@@ -146,6 +162,8 @@ func (a *App) startup(wailsContext context.Context) {
 		a.exclusive.Configure(settings.ExclusiveModeEnabled)
 	}
 
+	a.startProxyServers()
+	a.startControlServer()
 	go a.registry.Run(a.ctx, 10*time.Second, func(selected *adapter.Adapter) {
 		if selected == nil {
 			a.logger.Info("waiting for USB tethering adapter")
@@ -159,8 +177,6 @@ func (a *App) startup(wailsContext context.Context) {
 	})
 	go a.monitorAndroidStatus()
 	go a.monitorExclusiveMode()
-	a.startProxyServers()
-	a.startControlServer()
 }
 
 func (a *App) monitorAndroidStatus() {
@@ -190,15 +206,31 @@ func (a *App) monitorExclusiveMode() {
 		case <-a.context().Done():
 			return
 		case <-ticker.C:
+			a.exclusiveOperationMu.Lock()
 			a.mu.RLock()
 			manager := a.exclusive
+			systemProxy := a.systemProxy
 			a.mu.RUnlock()
 			if manager == nil {
+				a.exclusiveOperationMu.Unlock()
 				continue
 			}
 			ctx, cancel := context.WithTimeout(a.context(), 2*time.Second)
 			manager.Check(ctx)
 			cancel()
+			if systemProxy != nil {
+				if manager.Status().Active {
+					if err := systemProxy.Enable(); err != nil {
+						cleanupContext, cleanupCancel := context.WithTimeout(a.context(), 5*time.Second)
+						_ = manager.Reconcile(cleanupContext, nil)
+						cleanupCancel()
+						a.logger.Warn("Windows system proxy takeover stopped", "error", err)
+					}
+				} else if err := systemProxy.Restore(); err != nil {
+					a.logger.Warn("failed to restore Windows system proxy", "error", err)
+				}
+			}
+			a.exclusiveOperationMu.Unlock()
 		}
 	}
 }
@@ -211,6 +243,7 @@ func (a *App) shutdown(context.Context) {
 	controlServer := a.controlServer
 	controlListener := a.controlListener
 	exclusive := a.exclusive
+	systemProxy := a.systemProxy
 	a.proxyRunning = false
 	a.authenticatedProxyRunning = false
 	a.controlRunning = false
@@ -219,9 +252,16 @@ func (a *App) shutdown(context.Context) {
 	if cancel != nil {
 		cancel()
 	}
+	a.exclusiveOperationMu.Lock()
+	if systemProxy != nil {
+		if err := systemProxy.Restore(); err != nil {
+			a.logger.Warn("failed to restore Windows system proxy during shutdown", "error", err)
+		}
+	}
 	if exclusive != nil {
 		exclusive.Close()
 	}
+	a.exclusiveOperationMu.Unlock()
 	if proxyListener != nil {
 		_ = proxyListener.Close()
 	}
@@ -387,10 +427,15 @@ func (a *App) GetSnapshot() DesktopSnapshot {
 	authenticatedProxyRunning := a.authenticatedProxyRunning
 	authenticatedProxyError := a.authenticatedProxyError
 	exclusive := a.exclusive
+	systemProxy := a.systemProxy
 	a.mu.RUnlock()
 	exclusiveStatus := exclusivenet.Status{}
 	if exclusive != nil {
 		exclusiveStatus = exclusive.Status()
+	}
+	systemProxyStatus := systemproxy.Status{}
+	if systemProxy != nil {
+		systemProxyStatus = systemProxy.Status()
 	}
 	if controller == nil {
 		return DesktopSnapshot{
@@ -408,6 +453,8 @@ func (a *App) GetSnapshot() DesktopSnapshot {
 			ExclusiveModeActive:       exclusiveStatus.Active,
 			ExclusiveModeInterface:    exclusiveStatus.InterfaceName,
 			ExclusiveModeError:        exclusiveStatus.Error,
+			SystemProxyActive:         systemProxyStatus.Active,
+			SystemProxyError:          systemProxyStatus.Error,
 		}
 	}
 	return DesktopSnapshot{
@@ -426,6 +473,8 @@ func (a *App) GetSnapshot() DesktopSnapshot {
 		ExclusiveModeActive:       exclusiveStatus.Active,
 		ExclusiveModeInterface:    exclusiveStatus.InterfaceName,
 		ExclusiveModeError:        exclusiveStatus.Error,
+		SystemProxyActive:         systemProxyStatus.Active,
+		SystemProxyError:          systemProxyStatus.Error,
 	}
 }
 
@@ -453,6 +502,60 @@ func (a *App) GetAuthenticatedProxyAccess() (AuthenticatedProxyAccess, error) {
 		HTTPURL:   httpURL.String(),
 		SOCKS5URL: socks5URL.String(),
 	}, nil
+}
+
+func (a *App) CheckForUpdates() (updater.Info, error) {
+	a.updateOperationMu.Lock()
+	defer a.updateOperationMu.Unlock()
+	a.mu.RLock()
+	client := a.updateClient
+	a.mu.RUnlock()
+	if client == nil {
+		return updater.Info{}, errors.New("更新服务正在准备")
+	}
+	ctx, cancel := context.WithTimeout(a.context(), 35*time.Second)
+	defer cancel()
+	info, err := client.Check(ctx, version.Version)
+	if err != nil {
+		return updater.Info{}, err
+	}
+	a.mu.Lock()
+	if info.Available {
+		copy := info
+		a.latestUpdate = &copy
+	} else {
+		a.latestUpdate = nil
+	}
+	a.mu.Unlock()
+	return info, nil
+}
+
+func (a *App) InstallUpdate() error {
+	a.updateOperationMu.Lock()
+	defer a.updateOperationMu.Unlock()
+	a.mu.RLock()
+	client := a.updateClient
+	info := a.latestUpdate
+	a.mu.RUnlock()
+	if client == nil || info == nil || !info.Available {
+		return errors.New("请先检查新版本")
+	}
+	ctx, cancel := context.WithTimeout(a.context(), 10*time.Minute)
+	path, err := client.Download(ctx, *info)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if err := updater.LaunchApply(path); err != nil {
+		_ = os.RemoveAll(filepath.Dir(path))
+		return err
+	}
+	wailsruntime.Quit(a.context())
+	return nil
+}
+
+func (a *App) OpenProjectPage() {
+	wailsruntime.BrowserOpenURL(a.context(), updater.RepositoryURL)
 }
 
 func (a *App) RefreshAdapters() error {
@@ -492,9 +595,10 @@ func (a *App) SetExclusiveMode(enabled bool) error {
 	a.mu.RLock()
 	manager := a.exclusive
 	registry := a.registry
+	systemProxy := a.systemProxy
 	a.mu.RUnlock()
-	if manager == nil || registry == nil {
-		return errors.New("独占模式正在准备")
+	if manager == nil || registry == nil || systemProxy == nil {
+		return errors.New("严格代理模式正在准备")
 	}
 
 	previous := manager.Status().Enabled
@@ -509,6 +613,7 @@ func (a *App) SetExclusiveMode(enabled bool) error {
 	err := manager.Reconcile(ctx, target)
 	cancel()
 	if err != nil {
+		_ = systemProxy.Restore()
 		if enabled && !previous {
 			manager.Configure(false)
 			cleanupContext, cleanupCancel := context.WithTimeout(a.context(), 5*time.Second)
@@ -518,12 +623,33 @@ func (a *App) SetExclusiveMode(enabled bool) error {
 		return err
 	}
 
+	var systemProxyErr error
+	if enabled && manager.Status().Active {
+		if err := systemProxy.Enable(); err != nil {
+			// Never leave the phone adapter blocked when Windows could not route
+			// compatible applications through the local proxy.
+			cleanupContext, cleanupCancel := context.WithTimeout(a.context(), 10*time.Second)
+			_ = manager.Reconcile(cleanupContext, nil)
+			cleanupCancel()
+			systemProxyErr = err
+		}
+	} else if err := systemProxy.Restore(); err != nil {
+		systemProxyErr = err
+	}
+
 	if err := desktopconfig.SaveExclusiveMode(enabled); err != nil {
+		_ = systemProxy.Restore()
 		manager.Configure(previous)
 		rollbackContext, rollbackCancel := context.WithTimeout(a.context(), 10*time.Second)
 		_ = manager.Reconcile(rollbackContext, target)
 		rollbackCancel()
-		return fmt.Errorf("保存独占模式设置失败：%w", err)
+		if previous && manager.Status().Active {
+			_ = systemProxy.Enable()
+		}
+		return fmt.Errorf("保存严格代理模式设置失败：%w", err)
+	}
+	if systemProxyErr != nil {
+		return systemProxyErr
 	}
 	return nil
 }
@@ -735,6 +861,7 @@ func (a *App) reconcileExclusiveMode(selected *adapter.Adapter) {
 
 	a.mu.RLock()
 	manager := a.exclusive
+	systemProxy := a.systemProxy
 	a.mu.RUnlock()
 	if manager == nil {
 		return
@@ -747,7 +874,24 @@ func (a *App) reconcileExclusiveMode(selected *adapter.Adapter) {
 	ctx, cancel := context.WithTimeout(a.context(), 130*time.Second)
 	defer cancel()
 	if err := manager.Reconcile(ctx, target); err != nil {
+		if systemProxy != nil {
+			_ = systemProxy.Restore()
+		}
 		a.logger.Warn("exclusive phone USB policy is not active", "error", err)
+		return
+	}
+	if systemProxy == nil {
+		return
+	}
+	if manager.Status().Active {
+		if err := systemProxy.Enable(); err != nil {
+			cleanupContext, cleanupCancel := context.WithTimeout(a.context(), 10*time.Second)
+			_ = manager.Reconcile(cleanupContext, nil)
+			cleanupCancel()
+			a.logger.Warn("Windows system proxy takeover is not active", "error", err)
+		}
+	} else if err := systemProxy.Restore(); err != nil {
+		a.logger.Warn("failed to restore Windows system proxy", "error", err)
 	}
 }
 

@@ -16,17 +16,24 @@ import com.usbridge.core.model.TrafficHistorySummary
 import com.usbridge.core.preferences.AppPreferences
 import com.usbridge.core.root.RootControlClient
 import com.usbridge.core.root.RootGateway
+import com.usbridge.core.update.AppUpdateUiState
+import com.usbridge.core.update.AppUpdater
+import com.usbridge.core.update.InstallLaunchResult
+import com.usbridge.core.update.UpdateRelease
 import com.usbridge.service.UsbAutomationRuntime
 import com.usbridge.service.UsbAutomationRuntimeState
 import com.usbridge.service.UsbAutomationService
 import com.usbridge.traffic.TrafficStatisticsRuntime
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 data class MainUiState(
     val isRefreshing: Boolean = true,
@@ -43,7 +50,8 @@ data class MainUiState(
     val isCheckingPublicIp: Boolean = false,
     val publicIpError: String? = null,
     val mobileReconnect: MobileReconnectState = MobileReconnectState(),
-    val trafficSummary: TrafficHistorySummary = TrafficHistorySummary()
+    val trafficSummary: TrafficHistorySummary = TrafficHistorySummary(),
+    val update: AppUpdateUiState = AppUpdateUiState()
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -52,12 +60,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val diagnostics = DeviceDiagnostics(application, rootGateway)
     private val phoneControlRuntime = PhoneControlRuntime.get(application)
     private val preferences = AppPreferences(application)
+    private val appUpdater = AppUpdater(application)
     private val _uiState = MutableStateFlow(
         MainUiState(automation = preferences.readAutomationSettings())
     )
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     private var refreshJob: Job? = null
+    private var availableUpdate: UpdateRelease? = null
+    private var downloadedUpdate: File? = null
 
     init {
         runCatching { UsbAutomationService.startMonitoring(application) }
@@ -86,6 +97,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         refresh(requestRoot = true)
+        checkForUpdates(reportError = false)
     }
 
     fun refresh(requestRoot: Boolean = false) {
@@ -200,6 +212,103 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         if (state.rootState != RootState.GRANTED || state.mobileReconnect.isRunning) return
         phoneControlRuntime.reconnectMobileNetworkAsync()
+    }
+
+    fun checkForUpdates(reportError: Boolean = true) {
+        if (_uiState.value.update.isChecking || _uiState.value.update.isDownloading) return
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(update = state.update.copy(isChecking = true, message = null))
+            }
+            runCatching { withContext(Dispatchers.IO) { appUpdater.checkLatest() } }
+                .onSuccess { release ->
+                    val available = appUpdater.isNewer(release)
+                    availableUpdate = release.takeIf { available }
+                    if (!available) downloadedUpdate = null
+                    _uiState.update { state ->
+                        state.copy(
+                            update = AppUpdateUiState(
+                                available = available,
+                                latestVersion = release.version,
+                                releaseNotes = release.notes,
+                                message = if (available) "新版本 ${release.version} 已发布" else "当前已是最新版本"
+                            )
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { state ->
+                        state.copy(
+                            update = state.update.copy(
+                                isChecking = false,
+                                message = if (reportError) error.message ?: "检查更新失败" else null
+                            )
+                        )
+                    }
+                }
+        }
+    }
+
+    fun installUpdate() {
+        val release = availableUpdate ?: return
+        if (_uiState.value.update.isDownloading) return
+        val cached = downloadedUpdate?.takeIf(File::isFile)
+        if (cached != null) {
+            launchInstaller(cached)
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(update = state.update.copy(isDownloading = true, progress = 0, message = "正在下载新版本"))
+            }
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    appUpdater.download(release) { progress ->
+                        _uiState.update { state ->
+                            state.copy(update = state.update.copy(progress = progress))
+                        }
+                    }
+                }
+            }.onSuccess { apk ->
+                downloadedUpdate = apk
+                _uiState.update { state ->
+                    state.copy(update = state.update.copy(isDownloading = false, progress = 100))
+                }
+                launchInstaller(apk)
+            }.onFailure { error ->
+                _uiState.update { state ->
+                    state.copy(
+                        update = state.update.copy(
+                            isDownloading = false,
+                            progress = 0,
+                            message = error.message ?: "下载更新失败"
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    fun openProjectPage() = appUpdater.openRepository()
+
+    private fun launchInstaller(apk: File) {
+        val result = runCatching { appUpdater.launchInstaller(apk) }
+        _uiState.update { state ->
+            state.copy(
+                update = state.update.copy(
+                    message = result.fold(
+                        onSuccess = {
+                            if (it == InstallLaunchResult.PERMISSION_REQUIRED) {
+                                "允许安装后返回 USBridge，再点一次安装"
+                            } else {
+                                "请在系统安装界面确认更新"
+                            }
+                        },
+                        onFailure = { it.message ?: "打开系统安装界面失败" }
+                    )
+                )
+            )
+        }
     }
 
     private fun updateAutomation(transform: AutomationSettings.() -> AutomationSettings) {

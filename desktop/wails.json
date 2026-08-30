@@ -12,7 +12,7 @@
   "info": {
     "companyName": "USBridge Project",
     "productName": "USBridge",
-    "productVersion": "0.3.0",
+    "productVersion": "0.3.1",
     "copyright": "Copyright (c) 2026 USBridge contributors",
     "comments": "USB tethering control and local HTTP/SOCKS5 proxy"
   }

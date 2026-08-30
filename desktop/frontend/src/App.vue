@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getBridge } from './bridge'
 import MaterialIcon from './components/MaterialIcon.vue'
 import type { MaterialSymbolName } from './materialSymbols'
-import type { Adapter, AuthenticatedProxyAccess, OperationResponse, Snapshot, TrafficSnapshot } from './types'
+import type { Adapter, AuthenticatedProxyAccess, OperationResponse, Snapshot, TrafficSnapshot, UpdateInfo } from './types'
 
 type Page = 'connection' | 'traffic' | 'settings'
 type ControlExample = 'windows' | 'python' | 'go'
@@ -28,6 +28,7 @@ const snapshot = ref<Snapshot>({
 	exclusiveModeSupported: true,
 	exclusiveModeEnabled: false,
 	exclusiveModeActive: false,
+	systemProxyActive: false,
 	controlListen: '127.0.0.1:18082',
   controlRunning: false,
   networkChanging: false,
@@ -42,6 +43,9 @@ const copiedProxyItem = ref('')
 const authenticatedProxy = ref<AuthenticatedProxyAccess | null>(null)
 const authenticatedProxyAccessError = ref('')
 const authenticatedProxyAccessLoading = ref(false)
+const updateInfo = ref<UpdateInfo | null>(null)
+const updateChecking = ref(false)
+const updateInstalling = ref(false)
 const activeControlExample = ref<ControlExample>('windows')
 const failedPolls = ref(0)
 const now = ref(Date.now())
@@ -51,6 +55,7 @@ let copyNoticeHandle: number | undefined
 let proxyCopyNoticeHandle: number | undefined
 let notificationHandle: number | undefined
 let trafficResetConfirmHandle: number | undefined
+let updateCheckHandle: number | undefined
 let notificationId = 0
 let snapshotSequence = 0
 let appliedSnapshotSequence = 0
@@ -200,19 +205,19 @@ const exclusiveModePresentation = computed(() => {
   if (!snapshot.value.exclusiveModeSupported) {
     return { label: '不可用', hero: '当前不可用', detail: '此功能需要 Windows 10 或更高版本' }
   }
-  if (snapshot.value.exclusiveModeError) {
-    return { label: '未生效', hero: '保护未生效', detail: '请到设置查看' }
+  if (snapshot.value.exclusiveModeError || snapshot.value.systemProxyError) {
+    return { label: '未生效', hero: '接管未生效', detail: '请到设置查看原因' }
   }
   if (!snapshot.value.exclusiveModeEnabled) {
     return { label: '已关闭', hero: '允许直接使用', detail: '其他应用可直接使用手机网卡' }
   }
-  if (snapshot.value.exclusiveModeActive) {
-    return { label: '已生效', hero: 'USBridge 独占', detail: '其他应用需通过本机代理' }
+  if (snapshot.value.exclusiveModeActive && snapshot.value.systemProxyActive) {
+    return { label: '已接管', hero: '系统代理已接管', detail: '兼容的应用会自动使用手机网络' }
   }
   if (!selected.value) {
     return { label: '等待 USB', hero: '等待手机 USB', detail: '连接后自动生效' }
   }
-  return { label: '正在启用', hero: '正在保护网卡', detail: '等待 Windows 确认规则' }
+  return { label: '正在启用', hero: '正在接管网络', detail: '等待 Windows 完成设置' }
 })
 
 async function refresh(reportError = false) {
@@ -310,7 +315,7 @@ function setExclusiveMode(enabled: boolean) {
   void runAction(
     'exclusive-mode',
     () => bridge.SetExclusiveMode(enabled),
-    enabled ? '独占模式已开启' : '独占模式已关闭',
+    enabled ? '严格代理模式已开启' : '严格代理模式已关闭',
   )
 }
 
@@ -324,6 +329,42 @@ function chooseAutomatic() {
 
 function refreshAdapters() {
   void runAction('refresh', () => bridge.RefreshAdapters(), '网卡列表已刷新')
+}
+
+async function checkForUpdates(reportResult = true) {
+  if (updateChecking.value || updateInstalling.value) return
+  updateChecking.value = true
+  try {
+    updateInfo.value = await bridge.CheckForUpdates()
+    if (reportResult) {
+      showNotification(
+        updateInfo.value.available
+          ? `发现新版本 ${updateInfo.value.latestVersion}`
+          : `当前已是最新版本 ${updateInfo.value.currentVersion}`,
+        updateInfo.value.available ? 'info' : 'success',
+      )
+    }
+  } catch (error) {
+    if (reportResult) showNotification(errorMessage(error), 'error')
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+async function installUpdate() {
+  if (updateInstalling.value || !updateInfo.value?.available) return
+  updateInstalling.value = true
+  showNotification('正在下载并校验新版本，完成后会自动重启', 'info')
+  try {
+    await bridge.InstallUpdate()
+  } catch (error) {
+    updateInstalling.value = false
+    showNotification(errorMessage(error), 'error')
+  }
+}
+
+function openProjectPage() {
+  void bridge.OpenProjectPage()
 }
 
 function resetTraffic() {
@@ -416,6 +457,7 @@ onMounted(() => {
   now.value = Date.now()
   void refresh(true)
 	void loadAuthenticatedProxyAccess()
+  updateCheckHandle = window.setTimeout(() => void checkForUpdates(false), 2500)
   pollingHandle = window.setInterval(() => {
     now.value = Date.now()
     void refresh()
@@ -428,6 +470,7 @@ onUnmounted(() => {
 	if (proxyCopyNoticeHandle !== undefined) window.clearTimeout(proxyCopyNoticeHandle)
   if (notificationHandle !== undefined) window.clearTimeout(notificationHandle)
   if (trafficResetConfirmHandle !== undefined) window.clearTimeout(trafficResetConfirmHandle)
+  if (updateCheckHandle !== undefined) window.clearTimeout(updateCheckHandle)
 })
 </script>
 
@@ -528,7 +571,7 @@ onUnmounted(() => {
                 <span v-if="selected" class="connection-device">已自动识别手机 USB 设备：{{ selected.name }}</span>
               </div>
               <div class="hero-policy">
-                <span>独占模式</span>
+                <span>严格代理模式</span>
                 <strong>{{ exclusiveModePresentation.hero }}</strong>
                 <small>{{ exclusiveModePresentation.detail }}</small>
               </div>
@@ -743,9 +786,9 @@ onUnmounted(() => {
 
               <article class="settings-card exclusive-setting">
                 <div class="exclusive-setting-copy">
-                  <div><h3>独占模式</h3><p>仅允许 USBridge 直接使用所选手机 USB 网卡；其他应用使用手机网络时需连接本机代理。</p></div>
-                  <small>Wi-Fi、以太网和 VPN 不受影响。首次开启需要 Windows 管理员授权。</small>
-                  <p v-if="snapshot.exclusiveModeError" class="control-api-error">{{ snapshot.exclusiveModeError }}</p>
+                  <div><h3>严格代理模式</h3><p>自动为支持 Windows 系统代理的应用使用 USBridge，并阻止软件直接绕过代理使用手机网卡。</p></div>
+                  <small>忽略系统代理的软件仍需手动填写 127.0.0.1:18080。首次开启需要管理员授权。</small>
+                  <p v-if="snapshot.exclusiveModeError || snapshot.systemProxyError" class="control-api-error">{{ snapshot.exclusiveModeError || snapshot.systemProxyError }}</p>
                 </div>
                 <div class="exclusive-setting-control">
                   <span class="status-pill" :class="{ 'status-pill--muted': !snapshot.exclusiveModeActive }">{{ exclusiveModePresentation.label }}</span>
@@ -755,7 +798,7 @@ onUnmounted(() => {
                     type="button"
                     role="switch"
                     :aria-checked="snapshot.exclusiveModeEnabled"
-                    :aria-label="snapshot.exclusiveModeEnabled ? '关闭独占模式' : '开启独占模式'"
+                    :aria-label="snapshot.exclusiveModeEnabled ? '关闭严格代理模式' : '开启严格代理模式'"
                     :disabled="actionsLocked || !snapshot.exclusiveModeSupported"
                     @click="setExclusiveMode(!snapshot.exclusiveModeEnabled)"
                   >
@@ -866,9 +909,29 @@ onUnmounted(() => {
                 </div>
               </details>
 
+              <article class="settings-card update-setting">
+                <div>
+                  <h3>软件更新</h3>
+                  <p v-if="updateInfo?.available">新版本 {{ updateInfo.latestVersion }} 已发布</p>
+                  <p v-else-if="updateInfo">当前版本 {{ updateInfo.currentVersion }} 已是最新版本</p>
+                  <p v-else>从 GitHub Releases 获取正式版本</p>
+                </div>
+                <div class="update-actions">
+                  <button class="tonal-button" :disabled="updateChecking || updateInstalling" @click="checkForUpdates()">
+                    {{ updateChecking ? '正在检查' : '检查更新' }}
+                  </button>
+                  <button v-if="updateInfo?.available" class="primary-button" :disabled="updateInstalling" @click="installUpdate">
+                    <MaterialIcon name="download" :size="19" />{{ updateInstalling ? '正在安装' : '下载并更新' }}
+                  </button>
+                </div>
+              </article>
+
               <article class="settings-card">
-                <div><h3>USBridge</h3><p>手机移动网络共享与本机代理</p></div>
-                <div class="about-copy"><strong>版本 {{ appVersion }}</strong><small>设置与统计保存在本机</small></div>
+                <div><h3>USBridge</h3><p>github.com/jmcgillcoder/USBridge</p></div>
+                <div class="about-actions">
+                  <div class="about-copy"><strong>版本 {{ appVersion }}</strong><small>Apache-2.0 开源</small></div>
+                  <button class="text-button" @click="openProjectPage">打开仓库</button>
+                </div>
               </article>
             </section>
           </template>

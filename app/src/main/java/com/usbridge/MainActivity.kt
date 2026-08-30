@@ -69,7 +69,10 @@ class MainActivity : ComponentActivity() {
                     onStartUsbTethering = viewModel::startUsbTethering,
                     onStopUsbTethering = viewModel::stopUsbTethering,
                     onRefreshPublicIp = viewModel::refreshPublicIp,
-                    onReconnectMobileNetwork = viewModel::reconnectMobileNetwork
+                    onReconnectMobileNetwork = viewModel::reconnectMobileNetwork,
+                    onCheckForUpdates = { viewModel.checkForUpdates() },
+                    onInstallUpdate = viewModel::installUpdate,
+                    onOpenProjectPage = viewModel::openProjectPage
                 )
             }
         }

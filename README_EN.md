@@ -4,7 +4,7 @@
 
 USBridge lets Windows applications use an Android phone's mobile connection through USB tethering and exposes that connection as local HTTP and SOCKS5 proxies.
 
-The Android and Windows apps are designed to run together. The current release supports **rooted Android 11+** phones and **Windows x64**. There is no account, cloud service, or remote control component.
+The Android and Windows apps are designed to run together and currently support **rooted Android 11+** phones and **Windows 10 / 11 x64**.
 
 ## Screenshots
 
@@ -23,6 +23,7 @@ Download matching Android and Windows builds from [Releases](https://github.com/
 - Install the APK on the phone and grant root access on first launch.
 - Run the Windows EXE directly; no installer is required.
 - The Windows build is not yet signed with a commercial code-signing certificate, so SmartScreen may warn on first launch.
+- Future releases can be checked and installed from the Settings screen in either app.
 
 ## Quick Start
 
@@ -44,11 +45,11 @@ The reconnect action cycles the phone's mobile connection and compares public IP
 
 The available connection modes are Auto, IPv4, and IPv6. They select the address family used by proxy connections; they do not provide IPv4 service when the carrier only offers IPv6.
 
-## Exclusive Mode
+## Strict Proxy Mode
 
-Without exclusive mode, Windows applications that do not use a proxy may still connect directly through the phone's USB adapter.
+Without strict proxy mode, applications that do not use a proxy may still connect directly through the phone's USB adapter.
 
-Exclusive mode requests administrator permission once and installs dynamic Windows Filtering Platform rules for the selected adapter. Only USBridge can connect directly through that adapter; other applications must use port `18080` or `18081`. Other Wi-Fi, Ethernet, and VPN interfaces are not affected.
+Strict proxy mode sets the Windows HTTP and HTTPS system proxy to `127.0.0.1:18080` and prevents other applications from using the phone's USB adapter directly. Applications such as Chrome and Edge follow the system proxy automatically. Applications that ignore it still need to be configured with port `18080` or `18081`. The previous Windows proxy settings are restored when the mode is disabled or USBridge exits.
 
 ## Local Control API
 

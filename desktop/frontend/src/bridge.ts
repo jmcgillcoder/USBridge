@@ -19,6 +19,7 @@ const developmentSnapshot: Snapshot = {
 	exclusiveModeSupported: true,
 	exclusiveModeEnabled: false,
 	exclusiveModeActive: false,
+	systemProxyActive: false,
 	controlListen: '127.0.0.1:18082',
   controlRunning: false,
   networkChanging: false,
@@ -38,11 +39,15 @@ const developmentSnapshot: Snapshot = {
 const developmentBridge: AppBridge = {
   async GetSnapshot() { return developmentSnapshot },
 	async GetAuthenticatedProxyAccess() { return developmentAuthenticatedProxy },
+  async CheckForUpdates() { return { currentVersion: '0.3.1', latestVersion: '0.3.1', available: false } },
+  async InstallUpdate() {},
+  async OpenProjectPage() {},
   async RefreshAdapters() {},
   async SelectAdapter() {},
   async SetExclusiveMode(enabled) {
 	developmentSnapshot.exclusiveModeEnabled = enabled
 	developmentSnapshot.exclusiveModeActive = enabled && Boolean(developmentSnapshot.selectedAdapter)
+	developmentSnapshot.systemProxyActive = developmentSnapshot.exclusiveModeActive
   },
   async SetIPMode(mode) { developmentSnapshot.ipMode = mode as Snapshot['ipMode'] },
   async ResetTraffic() {},
@@ -59,6 +64,9 @@ function bindingUnavailable(): Promise<never> {
 const unavailableBridge: AppBridge = {
   GetSnapshot: bindingUnavailable,
 	GetAuthenticatedProxyAccess: bindingUnavailable,
+  CheckForUpdates: bindingUnavailable,
+  InstallUpdate: bindingUnavailable,
+  OpenProjectPage: bindingUnavailable,
   RefreshAdapters: bindingUnavailable,
   SelectAdapter: bindingUnavailable,
   SetExclusiveMode: bindingUnavailable,

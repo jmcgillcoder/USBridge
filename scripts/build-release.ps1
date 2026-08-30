@@ -1,10 +1,10 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '0.3.0',
+    [string]$Version = '0.3.1',
 
     [ValidateRange(1, 2100000000)]
-    [int]$AndroidVersionCode = 4,
+    [int]$AndroidVersionCode = 5,
 
     [string]$OutputDirectory,
 

@@ -237,7 +237,7 @@ func (p *wfpPolicy) Close() {
 }
 
 func openWFPEngine() (uintptr, error) {
-	name, _ := windows.UTF16PtrFromString("USBridge 独占模式")
+	name, _ := windows.UTF16PtrFromString("USBridge 严格代理模式")
 	description, _ := windows.UTF16PtrFromString("仅允许 USBridge 使用所选手机 USB 网卡")
 	session := fwpmSession0{
 		displayData: fwpmDisplayData0{name: name, description: description},

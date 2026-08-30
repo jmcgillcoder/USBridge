@@ -10,14 +10,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Construction
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -49,7 +52,10 @@ fun SettingsScreen(
     state: MainUiState,
     contentPadding: PaddingValues,
     onRefresh: () -> Unit,
-    onRetryRoot: () -> Unit
+    onRetryRoot: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onOpenProjectPage: () -> Unit
 ) {
     var diagnosticsExpanded by remember { mutableStateOf(false) }
     ScreenList(scaffoldPadding = contentPadding) {
@@ -65,6 +71,18 @@ fun SettingsScreen(
         }
 
         item {
+            UpdateCard(
+                state = state,
+                onCheckForUpdates = onCheckForUpdates,
+                onInstallUpdate = onInstallUpdate
+            )
+        }
+
+        item {
+            ProjectCard(onOpenProjectPage)
+        }
+
+        item {
             DiagnosticsCard(
                 state = state,
                 expanded = diagnosticsExpanded,
@@ -73,6 +91,121 @@ fun SettingsScreen(
             )
         }
 
+    }
+}
+
+@Composable
+private fun UpdateCard(
+    state: MainUiState,
+    onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit
+) {
+    val update = state.update
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconTile(
+                    icon = Icons.Outlined.SystemUpdateAlt,
+                    contentDescription = null,
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    iconColor = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(
+                        text = if (update.available) "发现新版本 ${update.latestVersion}" else "软件更新",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = update.message ?: "从 GitHub Releases 获取正式版本",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (update.isDownloading) {
+                LinearProgressIndicator(
+                    progress = { update.progress / 100f },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "正在下载 ${update.progress}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onCheckForUpdates,
+                    enabled = !update.isChecking && !update.isDownloading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (update.isChecking) "正在检查" else "检查更新")
+                }
+                if (update.available) {
+                    Button(
+                        onClick = onInstallUpdate,
+                        enabled = !update.isDownloading,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(if (update.isDownloading) "正在下载" else "下载并安装")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectCard(onOpenProjectPage: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Row(
+            modifier = Modifier.padding(18.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp)
+            ) {
+                Text(
+                    text = "开源仓库",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "github.com/jmcgillcoder/USBridge",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            TextButton(onClick = onOpenProjectPage) {
+                Text("打开")
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null)
+            }
+        }
     }
 }
 

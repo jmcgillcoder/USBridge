@@ -26,7 +26,7 @@ func (m *unsupportedController) Reconcile(context.Context, *Target) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.enabled {
-		return errors.New("独占模式仅支持 Windows")
+		return errors.New("严格代理模式仅支持 Windows")
 	}
 	return nil
 }

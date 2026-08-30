@@ -84,6 +84,8 @@ export interface Snapshot {
   exclusiveModeActive: boolean
   exclusiveModeInterface?: string
   exclusiveModeError?: string
+  systemProxyActive: boolean
+  systemProxyError?: string
   networkChanging: boolean
   version?: string
 }
@@ -94,6 +96,16 @@ export interface AuthenticatedProxyAccess {
 	password: string
 	httpUrl: string
 	socks5Url: string
+}
+
+export interface UpdateInfo {
+  currentVersion: string
+  latestVersion: string
+  available: boolean
+  name?: string
+  notes?: string
+  releaseUrl?: string
+  publishedAt?: string
 }
 
 export interface OperationResponse {
@@ -110,6 +122,9 @@ export interface OperationResponse {
 export interface AppBridge {
   GetSnapshot(): Promise<Snapshot>
 	GetAuthenticatedProxyAccess(): Promise<AuthenticatedProxyAccess>
+  CheckForUpdates(): Promise<UpdateInfo>
+  InstallUpdate(): Promise<void>
+  OpenProjectPage(): Promise<void>
   RefreshAdapters(): Promise<void>
   SelectAdapter(selector: string): Promise<void>
   SetExclusiveMode(enabled: boolean): Promise<void>

@@ -3,8 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionName = providers.gradleProperty("usbridgeVersionName").orElse("0.3.0")
-val appVersionCode = providers.gradleProperty("usbridgeVersionCode").orElse("4")
+val appVersionName = providers.gradleProperty("usbridgeVersionName").orElse("0.3.1")
+val appVersionCode = providers.gradleProperty("usbridgeVersionCode").orElse("5")
 val releaseKeystorePath = providers.environmentVariable("USBRIDGE_ANDROID_KEYSTORE").orNull
 val releaseStorePassword = providers.environmentVariable("USBRIDGE_ANDROID_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.environmentVariable("USBRIDGE_ANDROID_KEY_ALIAS").orNull

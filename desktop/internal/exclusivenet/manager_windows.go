@@ -70,7 +70,7 @@ func (m *windowsController) Reconcile(ctx context.Context, target *Target) error
 	faultMessage := m.lastErr
 	m.stateMu.RUnlock()
 	if closed {
-		return errors.New("独占模式服务已经停止")
+		return errors.New("严格代理模式服务已经停止")
 	}
 
 	if !enabled || target == nil || target.InterfaceIndex <= 0 {
@@ -271,7 +271,7 @@ func (m *windowsController) startHelperLocked(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			return fmt.Errorf("等待独占模式授权超时：%w", acceptErr)
+			return fmt.Errorf("等待严格代理模式授权超时：%w", acceptErr)
 		}
 		_ = connection.SetDeadline(time.Now().Add(5 * time.Second))
 		decoder := json.NewDecoder(connection)
@@ -290,7 +290,7 @@ func (m *windowsController) startHelperLocked(ctx context.Context) error {
 
 func (m *windowsController) requestLocked(ctx context.Context, command string, interfaceIndex int) (helperResponse, error) {
 	if m.connection == nil || m.encoder == nil || m.decoder == nil {
-		return helperResponse{}, errors.New("独占模式管理员服务未连接")
+		return helperResponse{}, errors.New("严格代理模式管理员服务未连接")
 	}
 	deadline := time.Now().Add(20 * time.Second)
 	if contextDeadline, ok := ctx.Deadline(); ok {
@@ -303,16 +303,16 @@ func (m *windowsController) requestLocked(ctx context.Context, command string, i
 	request := helperRequest{ID: m.requestID, Command: command, InterfaceIndex: interfaceIndex}
 	if err := m.encoder.Encode(request); err != nil {
 		m.dropHelperLocked()
-		return helperResponse{}, fmt.Errorf("发送独占模式设置失败：%w", err)
+		return helperResponse{}, fmt.Errorf("发送严格代理模式设置失败：%w", err)
 	}
 	var response helperResponse
 	if err := m.decoder.Decode(&response); err != nil {
 		m.dropHelperLocked()
-		return helperResponse{}, fmt.Errorf("读取独占模式状态失败：%w", err)
+		return helperResponse{}, fmt.Errorf("读取严格代理模式状态失败：%w", err)
 	}
 	if response.ID != request.ID {
 		m.dropHelperLocked()
-		return helperResponse{}, errors.New("独占模式管理员服务返回了无效状态")
+		return helperResponse{}, errors.New("严格代理模式管理员服务返回了无效状态")
 	}
 	if !response.OK {
 		if response.ErrorCode == helperErrorAdministratorRequired {
@@ -348,7 +348,7 @@ func friendlyError(err error) string {
 		return ""
 	}
 	if errors.Is(err, ErrElevationCanceled) {
-		return "已取消管理员授权，独占模式未开启"
+		return "已取消管理员授权，严格代理模式未开启"
 	}
 	if errors.Is(err, ErrAdministratorRequired) {
 		return ErrAdministratorRequired.Error()

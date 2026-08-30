@@ -56,7 +56,10 @@ fun USBridgeApp(
     onStartUsbTethering: () -> Unit,
     onStopUsbTethering: () -> Unit,
     onRefreshPublicIp: () -> Unit,
-    onReconnectMobileNetwork: () -> Unit
+    onReconnectMobileNetwork: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onInstallUpdate: () -> Unit,
+    onOpenProjectPage: () -> Unit
 ) {
     var currentRoute by rememberSaveable { mutableStateOf(AppDestination.Status.route) }
     val currentDestination = destinations.first { it.route == currentRoute }
@@ -159,7 +162,10 @@ fun USBridgeApp(
                     state = state,
                     contentPadding = innerPadding,
                     onRefresh = onRefresh,
-                    onRetryRoot = onRetryRoot
+                    onRetryRoot = onRetryRoot,
+                    onCheckForUpdates = onCheckForUpdates,
+                    onInstallUpdate = onInstallUpdate,
+                    onOpenProjectPage = onOpenProjectPage
                 )
             }
         }
@@ -229,7 +235,10 @@ private fun USBridgeAppPreview() {
             onStartUsbTethering = {},
             onStopUsbTethering = {},
             onRefreshPublicIp = {},
-            onReconnectMobileNetwork = {}
+            onReconnectMobileNetwork = {},
+            onCheckForUpdates = {},
+            onInstallUpdate = {},
+            onOpenProjectPage = {}
         )
     }
 }

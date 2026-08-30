@@ -7,7 +7,7 @@ import (
 )
 
 var (
-	ErrAdministratorRequired = errors.New("需要管理员权限才能开启独占模式")
+	ErrAdministratorRequired = errors.New("需要管理员权限才能开启严格代理模式")
 	ErrElevationCanceled     = errors.New("已取消管理员授权")
 )
 

@@ -1211,6 +1211,18 @@ button:disabled {
   gap: 3px;
 }
 
+.about-actions,
+.update-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-setting > div:first-child {
+  min-width: 0;
+}
+
 .about-copy strong {
   font-size: 13px;
 }
